@@ -223,6 +223,10 @@ String getProjectVersion() {
     return getVersionFromFile()
 }
 
+if (System.getProperty("spark_binary_versions").split(",").contains("3.1")) {
+    apply from: file("spark-3.1/build.gradle")
+}
+
 if (System.getProperty("spark_binary_versions").split(",").contains("3.2")) {
     apply from: file("spark-3.2/build.gradle")
 }
