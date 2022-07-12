@@ -15,14 +15,7 @@
 package xenon.clickhouse.read
 
 import org.apache.spark.sql.connector.read.InputPartition
-import org.apache.spark.sql.connector.read.partitioning.Partitioning
 import xenon.clickhouse.spec._
-
-case class ClickHousePartitioning(inputParts: Array[ClickHouseInputPartition]) extends Partitioning {
-
-  override def numPartitions(): Int = inputParts.length
-
-}
 
 case class ClickHouseInputPartition(
   table: TableSpec,

@@ -17,14 +17,12 @@ package xenon.clickhouse
 import org.apache.spark.sql.catalyst.analysis.{NoSuchTableException, _}
 import org.apache.spark.sql.clickhouse.{ExprUtils, SchemaUtils}
 import org.apache.spark.sql.connector.catalog._
-import org.apache.spark.sql.connector.catalog.functions.UnboundFunction
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import xenon.clickhouse.Constants._
 import xenon.clickhouse.exception.ClickHouseErrCode._
 import xenon.clickhouse.exception.{ClickHouseClientException, ClickHouseServerException}
-import xenon.clickhouse.func.{ClickHouseXxHash64, ClickHouseXxHash64Shard}
 import xenon.clickhouse.grpc.GrpcNodeClient
 import xenon.clickhouse.spec._
 
@@ -34,7 +32,6 @@ import scala.collection.JavaConverters._
 
 class ClickHouseCatalog extends TableCatalog
     with SupportsNamespaces
-    with FunctionCatalog
     with ClickHouseHelper
     with SQLHelper
     with Logging {
@@ -91,7 +88,7 @@ class ClickHouseCatalog extends TableCatalog
     case Array(database) =>
       grpcNodeClient.syncQueryOutputJSONEachRow(s"SHOW TABLES IN ${quoted(database)}") match {
         case Left(exception) if exception.getCode == UNKNOWN_DATABASE.code =>
-          throw NoSuchNamespaceException(namespace.mkString("."))
+          throw new NoSuchNamespaceException(namespace.mkString("."))
         case Left(exception) =>
           throw new ClickHouseServerException(exception)
         case Right(output) =>
@@ -100,7 +97,7 @@ class ClickHouseCatalog extends TableCatalog
             .map(table => Identifier.of(namespace, table))
             .toArray
       }
-    case _ => throw NoSuchNamespaceException(namespace.mkString("."))
+    case _ => throw new NoSuchNamespaceException(namespace.mkString("."))
   }
 
   @throws[NoSuchTableException]
@@ -113,7 +110,7 @@ class ClickHouseCatalog extends TableCatalog
             throw new NoSuchTableException(ident)
           // not sure if this check is necessary
           case Left(exception) if exception.getCode == UNKNOWN_DATABASE.code =>
-            throw NoSuchTableException(s"Database $db does not exist")
+            throw new NoSuchTableException(s"Database $db does not exist")
           case Left(exception) =>
             throw new ClickHouseServerException(exception)
           case Right(_) => (db, tbl)
@@ -304,7 +301,7 @@ class ClickHouseCatalog extends TableCatalog
     (unwrap(oldIdent), unwrap(newIdent)) match {
       case (Some((oldDb, oldTbl)), Some((newDb, newTbl))) =>
         grpcNodeClient.syncQueryOutputJSONEachRow(s"RENAME TABLE `$oldDb`.`$oldTbl` to `$newDb`.`$newTbl`") match {
-          case Left(exception) => throw NoSuchTableException(exception.getDisplayText)
+          case Left(exception) => throw new NoSuchTableException(exception.getDisplayText)
           case Right(_) =>
         }
       case _ => throw ClickHouseClientException("Invalid table identifier")
@@ -324,13 +321,13 @@ class ClickHouseCatalog extends TableCatalog
     case Array(_) =>
       loadNamespaceMetadata(namespace)
       Array()
-    case _ => throw NoSuchNamespaceException(namespace.map(quoted).mkString("."))
+    case _ => throw new NoSuchNamespaceException(namespace.map(quoted).mkString("."))
   }
 
   @throws[NoSuchNamespaceException]
   override def loadNamespaceMetadata(namespace: Array[String]): util.Map[String, String] = namespace match {
     case Array(database) => queryDatabaseSpec(database).toJavaMap
-    case _ => throw NoSuchNamespaceException(namespace.map(quoted).mkString("."))
+    case _ => throw new NoSuchNamespaceException(namespace.map(quoted).mkString("."))
   }
 
   @throws[NamespaceAlreadyExistsException]
@@ -344,27 +341,14 @@ class ClickHouseCatalog extends TableCatalog
   override def alterNamespace(namespace: Array[String], changes: NamespaceChange*): Unit =
     throw new UnsupportedOperationException("ALTER NAMESPACE OPERATION is unsupported yet")
 
-  @throws[NoSuchNamespaceException]
-  override def dropNamespace(namespace: Array[String], cascade: Boolean): Boolean = namespace match {
+  override def dropNamespace(namespace: Array[String]): Boolean = namespace match {
     case Array(database) =>
       loadNamespaceMetadata(namespace) // test existing
-      if (!cascade && listNamespaces(namespace).nonEmpty) {
-        throw new NonEmptyNamespaceException(namespace)
+      if (listNamespaces(namespace).nonEmpty) {
+        throw new IllegalStateException(s"Namespace ${namespace} is not empty")
       }
       grpcNodeClient.syncQueryOutputJSONEachRow(s"DROP DATABASE ${quoted(database)}").isRight
     case _ => false
   }
 
-  @throws[NoSuchNamespaceException]
-  override def listFunctions(namespace: Array[String]): Array[Identifier] = Array(
-    Identifier.of(Array.empty, "ck_xx_hash64"),
-    Identifier.of(Array.empty, "ck_xx_hash64_shard")
-  )
-
-  @throws[NoSuchFunctionException]
-  override def loadFunction(ident: Identifier): UnboundFunction = ident.name() match {
-    case "ck_xx_hash64" => ClickHouseXxHash64
-    case "ck_xx_hash64_shard" => new ClickHouseXxHash64Shard(clusterSpecs)
-    case _ => throw new NoSuchFunctionException(ident)
-  }
 }

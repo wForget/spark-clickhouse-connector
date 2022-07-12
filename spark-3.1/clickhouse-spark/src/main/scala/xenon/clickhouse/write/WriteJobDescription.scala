@@ -17,7 +17,7 @@ package xenon.clickhouse.write
 import java.time.ZoneId
 
 import org.apache.spark.sql.clickhouse.{ExprUtils, WriteOptions}
-import org.apache.spark.sql.connector.expressions.{Expression, SortOrder, Transform}
+import org.apache.spark.sql.connector.expressions.{Expression, Transform}
 import org.apache.spark.sql.types.StructType
 import xenon.clickhouse.expr.{Expr, FuncExpr, OrderExpr}
 import xenon.clickhouse.spec._
@@ -67,9 +67,4 @@ case class WriteJobDescription(
       ExprUtils.toSparkSplits(shardingKeyIgnoreRand, None)
     }
 
-  def sparkSortOrders: Array[SortOrder] = {
-    val _partitionKey = if (writeOptions.localSortByPartition) partitionKey else None
-    val _sortingKey = if (writeOptions.localSortByKey) sortingKey else None
-    ExprUtils.toSparkSortOrders(shardingKeyIgnoreRand, _partitionKey, _sortingKey)
-  }
 }

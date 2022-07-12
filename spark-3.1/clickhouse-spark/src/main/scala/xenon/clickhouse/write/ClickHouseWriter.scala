@@ -14,15 +14,14 @@
 
 package xenon.clickhouse.write
 
-import com.github.luben.zstd.{RecyclingBufferPool, ZstdOutputStreamNoFinalizer}
+import com.github.luben.zstd.{RecyclingBufferPool, ZstdOutputStream}
 import com.google.protobuf.ByteString
 import net.jpountz.lz4.LZ4FrameOutputStream
 import net.jpountz.lz4.LZ4FrameOutputStream.BLOCKSIZE
 import org.apache.commons.io.IOUtils
 import org.apache.spark.sql.catalyst.expressions.{BoundReference, Expression, SafeProjection}
-import org.apache.spark.sql.catalyst.{expressions, InternalRow}
+import org.apache.spark.sql.catalyst.{InternalRow, expressions}
 import org.apache.spark.sql.clickhouse.ExprUtils
-import org.apache.spark.sql.connector.metric.CustomTaskMetric
 import org.apache.spark.sql.connector.write.{DataWriter, WriterCommitMessage}
 import org.apache.spark.sql.types._
 import xenon.clickhouse._
@@ -30,10 +29,10 @@ import xenon.clickhouse.exception._
 import xenon.clickhouse.grpc.{GrpcClusterClient, GrpcNodeClient}
 import xenon.clickhouse.io.{ForwardingOutputStream, ObservableOutputStream}
 import xenon.clickhouse.spec.{DistributedEngineSpec, ShardUtils}
-
 import java.io.OutputStream
 import java.util.concurrent.atomic.LongAdder
 import java.util.zip.GZIPOutputStream
+
 import scala.util.{Failure, Success}
 
 abstract class ClickHouseWriter(writeJob: WriteJobDescription)
@@ -135,7 +134,7 @@ abstract class ClickHouseWriter(writeJob: WriteJobDescription)
 
   val serializedBuffer: ByteString.Output = ByteString.newOutput(16 * 1024 * 1024)
 
-  private val observableSerializedOutput = new ObservableOutputStream(
+  private val observableSerializedOutput: ObservableOutputStream = new ObservableOutputStream(
     serializedBuffer,
     Some(_lastSerializedBytesWritten),
     Some(_totalSerializedBytesWritten)
@@ -161,7 +160,7 @@ abstract class ClickHouseWriter(writeJob: WriteJobDescription)
       case "lz4" =>
         new LZ4FrameOutputStream(observableSerializedOutput, BLOCKSIZE.SIZE_4MB)
       case "zstd" =>
-        val zstdOutput = new ZstdOutputStreamNoFinalizer(observableSerializedOutput, RecyclingBufferPool.INSTANCE)
+        val zstdOutput = new ZstdOutputStream(observableSerializedOutput, RecyclingBufferPool.INSTANCE)
           .setLevel(writeJob.writeOptions.zstdLevel)
           .setWorkers(writeJob.writeOptions.zstdThread)
         bufferedForwardingOutput.updateDelegate(zstdOutput)
@@ -172,14 +171,6 @@ abstract class ClickHouseWriter(writeJob: WriteJobDescription)
     compressedForwardingOutput.updateDelegate(compressedOutput)
   }
   renewCompressedOutput()
-
-  override def currentMetricsValues: Array[CustomTaskMetric] = Array(
-    WriteTaskMetric("recordsWritten", totalRecordsWritten),
-    WriteTaskMetric("bytesWritten", totalSerializedBytesWritten),
-    WriteTaskMetric("rawBytesWritten", totalRawBytesWritten),
-    WriteTaskMetric("serializeTime", totalSerializeTime),
-    WriteTaskMetric("writtenTime", totalWrittenTime)
-  )
 
   def format: String
 

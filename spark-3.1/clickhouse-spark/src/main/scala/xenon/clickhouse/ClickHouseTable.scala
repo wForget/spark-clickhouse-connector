@@ -49,7 +49,6 @@ case class ClickHouseTable(
     with SupportsRead
     with SupportsWrite
     with SupportsDelete
-    with TruncatableTable
     with SupportsMetadataColumns
     with SupportsPartitionManagement
     with ClickHouseHelper
@@ -197,10 +196,6 @@ case class ClickHouseTable(
     }
   }
 
-  override def purgePartition(ident: InternalRow): Boolean = dropPartition(ident)
-
-  override def truncatePartition(ident: InternalRow): Boolean = dropPartition(ident)
-
   override def replacePartitionMetadata(ident: InternalRow, props: util.Map[String, String]): Unit =
     throw new UnsupportedOperationException("Unsupported operation: replacePartitionMetadata")
 
@@ -279,13 +274,4 @@ case class ClickHouseTable(
     }
   }
 
-  override def truncateTable(): Boolean =
-    Utils.tryWithResource(GrpcNodeClient(node)) { implicit grpcNodeClient =>
-      engineSpec match {
-        case DistributedEngineSpec(_, cluster, local_db, local_table, _, _) =>
-          truncateTable(local_db, local_table, Some(cluster))
-        case _ =>
-          truncateTable(database, table)
-      }
-    }
 }

@@ -14,35 +14,15 @@
 
 package xenon.clickhouse.write
 
-import org.apache.spark.sql.catalyst.{InternalRow, SQLConfHelper}
-import org.apache.spark.sql.clickhouse.ClickHouseSQLConf._
-import org.apache.spark.sql.connector.distributions.{Distribution, Distributions}
-import org.apache.spark.sql.connector.expressions.SortOrder
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.write._
 import xenon.clickhouse.exception.ClickHouseClientException
 import xenon.clickhouse.write.format.{ClickHouseArrowStreamWriter, ClickHouseJsonEachRowWriter}
 
 class ClickHouseWriteBuilder(writeJob: WriteJobDescription) extends WriteBuilder {
 
-  override def build(): Write = new ClickHouseWrite(writeJob)
-}
+  override def buildForBatch(): BatchWrite = new ClickHouseBatchWrite(writeJob)
 
-class ClickHouseWrite(
-  writeJob: WriteJobDescription
-) extends Write
-    with RequiresDistributionAndOrdering
-    with SQLConfHelper {
-
-  // for SPARK-37523
-  def distributionStrictlyRequired: Boolean = writeJob.writeOptions.repartitionStrictly
-
-  override def requiredDistribution(): Distribution = Distributions.clustered(writeJob.sparkSplits.toArray)
-
-  override def requiredNumPartitions(): Int = conf.getConf(WRITE_REPARTITION_NUM)
-
-  override def requiredOrdering(): Array[SortOrder] = writeJob.sparkSortOrders
-
-  override def toBatch: BatchWrite = new ClickHouseBatchWrite(writeJob)
 }
 
 class ClickHouseBatchWrite(

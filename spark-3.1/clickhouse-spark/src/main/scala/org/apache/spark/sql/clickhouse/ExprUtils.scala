@@ -31,22 +31,15 @@ object ExprUtils {
   def toSparkSplits(shardingKey: Option[Expr], partitionKey: Option[List[Expr]]): Array[Transform] =
     (shardingKey.seq ++ partitionKey.seq.flatten).map(toSparkTransform).toArray
 
-  def toSparkSortOrders(
-    shardingKeyIgnoreRand: Option[Expr],
-    partitionKey: Option[List[Expr]],
-    sortingKey: Option[List[OrderExpr]]
-  ): Array[SortOrder] =
-    toSparkSplits(shardingKeyIgnoreRand, partitionKey).map(Expressions.sort(_, SortDirection.ASCENDING)) ++:
-      sortingKey.seq.flatten.map { case OrderExpr(expr, asc, nullFirst) =>
-        val direction = if (asc) SortDirection.ASCENDING else SortDirection.DESCENDING
-        val nullOrder = if (nullFirst) NullOrdering.NULLS_FIRST else NullOrdering.NULLS_LAST
-        Expressions.sort(toSparkTransform(expr), direction, nullOrder)
-      }.toArray
-
   @tailrec
   def toCatalyst(v2Expr: V2Expression, fields: Array[StructField]): Expression =
     v2Expr match {
-      case IdentityTransform(ref) => toCatalyst(ref, fields)
+      case transform: Transform => transform match {
+        case IdentityTransform(ref) => toCatalyst(ref, fields)
+        case _ => throw ClickHouseClientException(
+          s"Unsupported V2 expression: $v2Expr, SPARK-33779: only support IdentityTransform"
+        )
+      }
       case ref: NamedReference if ref.fieldNames.length == 1 =>
         val (field, ordinal) = fields
           .zipWithIndex
@@ -54,7 +47,7 @@ object ExprUtils {
           .getOrElse(throw ClickHouseClientException(s"Invalid field reference: $ref"))
         BoundReference(ordinal, field.dataType, field.nullable)
       case _ => throw ClickHouseClientException(
-          s"Unsupported V2 expression: $v2Expr, SPARK-33779: Spark 3.3 only support IdentityTransform"
+          s"Unsupported V2 expression: $v2Expr, SPARK-33779: only support IdentityTransform"
         )
     }
 
